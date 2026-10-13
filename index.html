@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Krillion Log</title><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>body{font:16px system-ui;max-width:640px;margin:auto;padding:12px}input,select,textarea,button{font:inherit;padding:10px;width:100%;box-sizing:border-box;margin:4px 0}
+button{background:#0a6;color:#fff;border:0;border-radius:8px}.card{border:1px solid #8884;border-radius:10px;padding:12px;margin:12px 0}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;text-align:left}.err{color:#c33}.row{display:flex;gap:8px}</style></head><body>
+<h1>🦐 Krillion Log</h1><div id="msg" class="err"></div>
+<div class="card" id="gate"><input id="pass" type="password" placeholder="Group passcode"><button id="go">Enter</button></div>
+<div id="app" hidden>
+<div class="card"><b id="leader"></b><div id="waiting"></div></div>
+<div class="card"><h3>Submit</h3><select id="who"></select>
+<textarea id="raw" rows="4" placeholder="Paste your Krillion share text"></textarea>
+<div class="row"><input id="score" type="number" placeholder="Score"><input id="depth" type="number" placeholder="Depth (m)"><input id="date" type="date"></div>
+<div id="preview"></div><label><input id="over" type="checkbox" style="width:auto"> Overwrite existing entry</label>
+<button id="save">Save</button>
+<details><summary>How to submit</summary><pre>Krillion #90 🦐
+260
+
+🐟🫧🫧🦑🦑🐟🦑</pre>Copy from Krillion's share screen, paste, check the preview, save.</details></div>
+<div class="card"><h3>Standings</h3><select id="sort"><option value="avg">Average</option><option value="games">Games</option><option value="best">Best</option></select><table id="tbl"></table></div>
+<div class="card"><canvas id="chart"></canvas></div>
+<div class="card"><h3>Head-to-head</h3><div class="row"><select id="a"></select><select id="b"></select></div><div id="h2h"></div></div>
+</div>
+<script type="module">
+import {API_URL} from './config.js'; import {parseKrillion} from './src/parser.js'; import {allStats,leaders,headToHead} from './src/stats.js';
+const $=id=>document.getElementById(id), today=()=>new Date().toLocaleDateString('en-CA'); let D, ch, pass=sessionStorage.pass||'';
+const err=m=>$('msg').textContent=m||'';
+async function load(){try{const r=await fetch(`${API_URL}?pass=${encodeURIComponent(pass)}`).then(r=>r.json());
+ if(r.error){sessionStorage.pass='';$('gate').hidden=false;$('app').hidden=true;return err('Wrong passcode.')}
+ D={results:r.results.map(x=>({...x,score:+x.score})),players:r.players.map(p=>p.name)};sessionStorage.pass=pass;$('gate').hidden=true;$('app').hidden=false;err();render()}
+ catch{err('Network error: could not reach the sheet. Try again.')}}
+function render(){const t=today(),L=leaders(D.results,D.players,t);
+ $('leader').textContent=L.top==null?'No scores yet today':`Today: ${L.leaders.join(' & ')} (${L.top})`;
+ $('waiting').textContent=L.waiting.length?'Waiting on: '+L.waiting.join(', '):'Everyone is in!';
+ for(const id of['who','a','b'])if(!$(id).options.length)D.players.forEach(p=>$(id).add(new Option(p)));
+ $('date').value||=t;
+ $('tbl').innerHTML='<tr><th>Player<th>Avg<th>Games<th>Best<th>Streak'+allStats(D.results,D.players,t,$('sort').value).map(s=>`<tr><td>${s.player}<td>${s.avg.toFixed(0)}<td>${s.games}<td>${s.best}<td>${s.currentStreak} (max ${s.longestStreak})`).join('');
+ const dates=[...new Set(D.results.map(r=>r.date))].sort();ch?.destroy();
+ ch=new Chart($('chart'),{type:'line',data:{labels:dates,datasets:D.players.map(p=>({label:p,spanGaps:true,data:dates.map(d=>D.results.find(r=>r.date===d&&r.player===p)?.score??null)}))}});
+ h2h()}
+function h2h(){const a=$('a').value,b=$('b').value;if(a===b)return $('h2h').textContent='Pick two players';const h=headToHead(D.results,a,b);$('h2h').textContent=`${a} ${h[a]} – ${h[b]} ${b} (${h.ties} ties)`}
+$('raw').oninput=()=>{const p=parseKrillion($('raw').value);if(p.score!=null)$('score').value=p.score;if(p.depth!=null)$('depth').value=p.depth;
+ $('preview').textContent=p.ok?`Parsed: score ${p.score}${p.depth?`, ${p.depth}m`:''}, ${p.breakdown.length} symbols${p.puzzle?`, #${p.puzzle}`:''}. Edit above if wrong.`:'Could not parse — enter score manually.';
+ if(!p.ok&&$('raw').value)console.warn('Parse failed',$('raw').value)};
+$('save').onclick=async()=>{const score=+$('score').value;if(!$('score').value)return err('Enter a score.');
+ try{const r=await fetch(API_URL,{method:'POST',body:JSON.stringify({pass,date:$('date').value,player:$('who').value,score,depth:$('depth').value||null,raw_input:$('raw').value,overwrite:$('over').checked})}).then(r=>r.json());
+  if(r.error==='duplicate')return err('Already submitted for that date. Tick "Overwrite" to replace it.');if(r.error)return err('Error: '+r.error);
+  $('raw').value='';$('score').value='';$('depth').value='';err();await load()}catch{err('Network error: not saved. Try again.')}};
+$('go').onclick=()=>{pass=$('pass').value;load()};$('sort').onchange=render;$('a').onchange=$('b').onchange=h2h;if(pass)load();
+</script></body></html>

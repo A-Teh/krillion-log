@@ -1,0 +1,1 @@
+{"name":"krillion-tracker","type":"module","scripts":{"test":"node --test test/tests.js","start":"npx serve ."}}
