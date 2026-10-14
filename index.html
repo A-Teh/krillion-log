@@ -2,7 +2,8 @@
 <title>Krillion Log</title><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>body{font:16px system-ui;max-width:640px;margin:auto;padding:12px}input,select,textarea,button{font:inherit;padding:10px;width:100%;box-sizing:border-box;margin:4px 0}
 button{background:#0a6;color:#fff;border:0;border-radius:8px}.card{border:1px solid #8884;border-radius:10px;padding:12px;margin:12px 0}
-table{width:100%;border-collapse:collapse}td,th{padding:6px;text-align:left}.err{color:#c33}.row{display:flex;gap:8px}</style></head><body>
+table{width:100%;border-collapse:collapse}td,th{padding:6px;text-align:left}.err{color:#c33}.row{display:flex;gap:8px}
+.chart-wrap{overflow-x:auto}.chart-wrap canvas{min-width:480px}</style></head><body>
 <h1>🦐 Krillion Log</h1><div id="msg" class="err"></div>
 <div class="card" id="gate"><input id="pass" type="password" placeholder="Group passcode"><button id="go">Enter</button></div>
 <div id="app" hidden>
@@ -18,7 +19,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px;text-align:left}.err
 
 🐟🫧🫧🦑🦑🐟🦑</pre>Copy from Krillion's share screen, paste, check the preview, save. Depth is calculated as 10 × score.</details></div>
 <div class="card"><h3>Standings</h3><select id="sort"><option value="avg">Average</option><option value="games">Games</option><option value="best">Best</option></select><table id="tbl"></table></div>
-<div class="card"><canvas id="chart"></canvas></div>
+<div class="card chart-wrap"><canvas id="chart"></canvas></div>
 <div class="card"><h3>Head-to-head</h3><div class="row"><select id="a"></select><select id="b"></select></div><div id="h2h"></div></div>
 </div>
 <script type="module">
@@ -31,7 +32,7 @@ async function load(){
   try{
     const r=await fetch(`${API_URL}?pass=${encodeURIComponent(pass)}`).then(r=>r.json());
     if(r.error){sessionStorage.pass='';$('gate').hidden=false;$('app').hidden=true;return err('Wrong passcode.')}
-    D={results:r.results.map(x=>({...x,score:+x.score})),players:r.players.map(p=>p.name)};
+    D={results:r.results.map(x=>({...x,date:String(x.date).slice(0,10),score:+x.score})),players:r.players.map(p=>p.name)};
     sessionStorage.pass=pass;$('gate').hidden=true;$('app').hidden=false;err();render();
   }catch{err('Network error: could not reach the sheet. Try again.')}
 }
@@ -46,9 +47,23 @@ function render(){
     allStats(D.results,D.players,t,$('sort').value).map(s=>
       `<tr><td>${s.player}<td>${s.avg.toFixed(0)}<td>${s.games}<td>${s.best}<td>${s.currentStreak} (max ${s.longestStreak})`).join('');
   const dates=[...new Set(D.results.map(r=>r.date))].sort();
+  // Parse yyyy-mm-dd explicitly so a stray timestamp suffix can't corrupt the label.
+  const label=d=>{const m=d.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[2]}/${m[3]}`:d;};
   ch?.destroy();
-  ch=new Chart($('chart'),{type:'line',data:{labels:dates,datasets:D.players.map(p=>({label:p,spanGaps:true,
-    data:dates.map(d=>D.results.find(r=>r.date===d&&r.player===p)?.score??null)}))}});
+  ch=new Chart($('chart'),{
+    type:'line',
+    data:{
+      labels:dates.map(label),
+      datasets:D.players.map(p=>({
+        label:p,spanGaps:true,
+        data:dates.map(d=>D.results.find(r=>r.date===d&&r.player===p)?.score??null)
+      }))
+    },
+    options:{
+      maintainAspectRatio:true,aspectRatio:2,
+      scales:{x:{type:'category',ticks:{autoSkip:true,maxTicksLimit:8,maxRotation:0}}}
+    }
+  });
   h2h();
 }
 
@@ -74,7 +89,8 @@ $('save').onclick=async()=>{
   try{
     const r=await fetch(API_URL,{method:'POST',body:JSON.stringify({pass,date:$('date').value,player:$('who').value,score,raw_input:$('raw').value})}).then(r=>r.json());
     if(r.error) return err('Error: '+r.error);
-    $('raw').value='';$('score').value='';$('preview').textContent='';err();
+    $('raw').value='';$('score').value='';$('preview').textContent='';
+    err(r.overwritten?'Saved (replaced existing entry for that date).':'');
     await load();
   }catch{err('Network error: not saved. Try again.')}
 };
